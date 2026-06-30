@@ -40,13 +40,13 @@ jobs:
         if [ -f run_id.txt ]; then
           RUN_ID=$(cat run_id.txt)
           
-          # 1. Generate Dockerfile (Tanpa build otomatis agar bisa kita patch)
+          # 1. Generate Dockerfile (Tanpa build otomatis)
           mlflow models generate-dockerfile -m "runs:/${RUN_ID}/model" -d docker_build_dir
           
           # 2. Patch: Perbaiki URL get-pip.py agar mendukung Python 3.9
           sed -i 's|https://bootstrap.pypa.io/get-pip.py|https://bootstrap.pypa.io/pip/3.9/get-pip.py|g' docker_build_dir/Dockerfile
           
-          # 3. Build Manual
+          # 3. Build Manual (Docker sudah terinstal di runner, jadi langsung bisa dipakai)
           docker build -t "${{ secrets.DOCKER_USERNAME }}/telco-churn-model:latest" docker_build_dir/
           
           # 4. Push
