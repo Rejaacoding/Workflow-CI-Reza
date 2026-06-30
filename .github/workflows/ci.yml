@@ -20,20 +20,24 @@ jobs:
         with:
           python-version: '3.10'
 
-      # Provide QEMU when cross-platform builds are needed (optional but safe)
+      # Optional: provide QEMU for cross-platform builds
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
         with:
           platforms: linux/amd64,linux/arm64
 
-      # Use Buildx (recommended) instead of trying to apt-install docker
+      # Use Buildx for robust docker builds (no apt installs)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      # Sanity-check Docker is available (no apt install)
+      # Sanity-check: ensure Docker is present; do NOT attempt apt installs here
       - name: Verify Docker availability
         run: |
           set -eux
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "ERROR: docker CLI not found on runner. This workflow expects Docker to be available on ubuntu-hosted runners."
+            exit 1
+          fi
           docker --version
           docker buildx version || true
 
@@ -56,7 +60,6 @@ jobs:
           if [ -f run_id.txt ]; then
             RUN_ID=$(cat run_id.txt)
             echo "Using RUN_ID: $RUN_ID"
-            # Do not use apt installs or sudo for docker; buildx is set up and docker CLI is available
             mlflow models build-docker \
               -m "runs:/${RUN_ID}/model" \
               -n "${{ env.DOCKER_IMAGE }}" \
@@ -75,7 +78,6 @@ jobs:
       - name: Push Docker Image
         run: |
           set -eux
-          # mlflow build-docker tags the image locally with the name we provided; push it
           docker push "${{ env.DOCKER_IMAGE }}"
 
       - name: Verify Docker Image
