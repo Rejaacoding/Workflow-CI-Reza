@@ -30,7 +30,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      # Sanity-check: ensure Docker is present; do NOT attempt apt installs here
+      # Sanity-check: ensure Docker CLI is present (do NOT apt install)
       - name: Verify Docker availability
         run: |
           set -eux
