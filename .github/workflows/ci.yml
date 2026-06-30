@@ -1,16 +1,44 @@
-- name: Build and Push Docker Image
+name: MLflow CI Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12.7'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install mlflow==2.19.0 pandas numpy scikit-learn
+
+    - name: Run MLflow Project
+      run: |
+        cd MLProject
+        mlflow run . --env-manager=local
+        
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Build and Push Docker Image
       run: |
         cd MLProject
         RUN_ID=$(cat run_id.txt)
         
-        # 1. Suruh MLflow membuat folder dan Dockerfile-nya (jangan langsung dibuild)
-        mlflow models generate-dockerfile -m "runs:/$RUN_ID/model" -d docker_build_dir
+        mlflow models build-docker -m "runs:/$RUN_ID/model" -n "${{ secrets.DOCKER_USERNAME }}/telco-churn-model:latest" --python-version 3.10
         
-        # 2. Gunakan trik Linux 'sed' untuk mengganti URL sesuai saran Copilot
-        sed -i 's|https://bootstrap.pypa.io/get-pip.py|https://bootstrap.pypa.io/pip/3.9/get-pip.py|g' docker_build_dir/Dockerfile
-        
-        # 3. Build image secara manual dari folder yang sudah diperbaiki
-        docker build -t "${{ secrets.DOCKER_USERNAME }}/telco-churn-model:latest" docker_build_dir/
-        
-        # 4. Push ke Docker Hub
         docker push "${{ secrets.DOCKER_USERNAME }}/telco-churn-model:latest"
