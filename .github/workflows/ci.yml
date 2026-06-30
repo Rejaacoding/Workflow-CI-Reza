@@ -8,70 +8,77 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    env:
+      DOCKER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/telco-churn-model:latest
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
 
-    - name: Verify Docker
-      run: |
-        set -eux
-        # Use preinstalled Docker when possible; fall back to apt only if missing.
-        if command -v docker >/dev/null 2>&1; then
+      # Provide QEMU when cross-platform builds are needed (optional but safe)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+        with:
+          platforms: linux/amd64,linux/arm64
+
+      # Use Buildx (recommended) instead of trying to apt-install docker
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      # Sanity-check Docker is available (no apt install)
+      - name: Verify Docker availability
+        run: |
+          set -eux
           docker --version
-        else
-          echo "Docker not found, attempting to install docker.io"
-          sudo apt-get update
-          sudo apt-get install -y docker.io
-        fi
-        # Try to start docker (may be unnecessary on hosted runners). Ignore failures.
-        sudo systemctl start docker || true
-        docker info || true
+          docker buildx version || true
 
-    - name: Install Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install mlflow==2.19.0 pandas numpy scikit-learn
+      - name: Install Python dependencies
+        run: |
+          set -eux
+          python -m pip install --upgrade pip
+          pip install mlflow==2.19.0 pandas numpy scikit-learn
 
-    - name: Run MLflow Project
-      run: |
-        set -eux
-        cd MLProject
-        mlflow run . --env-manager=local
+      - name: Run MLflow Project
+        run: |
+          set -eux
+          cd MLProject
+          mlflow run . --env-manager=local
 
-    - name: Build Docker Image
-      run: |
-        set -eux
-        cd MLProject
-        if [ -f run_id.txt ]; then
-          RUN_ID=$(cat run_id.txt)
-          echo "Using RUN_ID: $RUN_ID"
-          # Use sudo so mlflow can access the docker daemon in the CI environment
-          sudo mlflow models build-docker \
-            -m "runs:/${RUN_ID}/model" \
-            -n "${{ secrets.DOCKER_USERNAME }}/telco-churn-model:latest" \
-            --python-version 3.10
-        else
-          echo "ERROR: run_id.txt not found!"
-          exit 1
-        fi
+      - name: Build Docker image via MLflow
+        run: |
+          set -eux
+          cd MLProject
+          if [ -f run_id.txt ]; then
+            RUN_ID=$(cat run_id.txt)
+            echo "Using RUN_ID: $RUN_ID"
+            # Do not use apt installs or sudo for docker; buildx is set up and docker CLI is available
+            mlflow models build-docker \
+              -m "runs:/${RUN_ID}/model" \
+              -n "${{ env.DOCKER_IMAGE }}" \
+              --python-version 3.10
+          else
+            echo "ERROR: run_id.txt not found!"
+            exit 1
+          fi
 
-    - name: Log in to Docker Hub
-      uses: docker/login-action@v2
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-    - name: Push Docker Image
-      run: |
-        set -eux
-        sudo docker push "${{ secrets.DOCKER_USERNAME }}/telco-churn-model:latest"
+      - name: Push Docker Image
+        run: |
+          set -eux
+          # mlflow build-docker tags the image locally with the name we provided; push it
+          docker push "${{ env.DOCKER_IMAGE }}"
 
-    - name: Verify Docker Image
-      run: |
-        docker images | grep telco-churn-model || true
+      - name: Verify Docker Image
+        run: |
+          set -eux
+          docker images --format "{{.Repository}}:{{.Tag}}" | grep "${{ env.DOCKER_IMAGE }}" || true
