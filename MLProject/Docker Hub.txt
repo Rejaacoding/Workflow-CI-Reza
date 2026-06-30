@@ -1,0 +1,1 @@
+https://hub.docker.com/r/rezaputrairawan/telco-churn-model
